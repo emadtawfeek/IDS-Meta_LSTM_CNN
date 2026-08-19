@@ -3,21 +3,24 @@ from __future__ import annotations
 import gc
 import hashlib
 import json
+import math
 import os
 import platform
 import random
 import shutil
 import sys
+import threading
 import time
 from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import yaml
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import f1_score
 
 from .config import (
     PAPER_BINARY_CONFUSIONS,
+    PAPER_CIC_MULTICLASS_NAMES,
     PAPER_MULTICLASS_CONFUSIONS,
     FitnessName,
     HyperParameters,
@@ -26,10 +29,23 @@ from .config import (
     ProtocolName,
     SwarmName,
     Task,
+    get_paper_preset,
 )
-from .data import PreparedDataset, deterministic_subset, reshape_for_model
+from .data import (
+    PreparedDataset,
+    cache_identity,
+    deterministic_stratified_subset,
+    prepared_split_checksum,
+    reshape_for_model,
+    subset_manifest,
+)
 from .metrics import evaluate_predictions, matrix_distance
 from .models import build_model
+from .selection import (
+    cost_equation,
+    validation_selection_callback,
+    validate_fitness_configuration,
+)
 
 
 def set_reproducible_seed(seed: int, deterministic_ops: bool = True) -> None:
@@ -49,8 +65,35 @@ def set_reproducible_seed(seed: int, deterministic_ops: bool = True) -> None:
 
 
 def _select(features, labels, maximum, seed):
-    indices = deterministic_subset(len(labels), maximum, seed)
+    indices = deterministic_stratified_subset(labels, maximum, seed)
     return features[indices], labels[indices], indices
+
+
+class _MemorySampler:
+    """Periodically sample process RSS while fit and prediction are running."""
+
+    def __init__(self, process, interval_seconds: float = 0.05):
+        self.process = process
+        self.interval_seconds = interval_seconds
+        self.peak = int(process.memory_info().rss)
+        self.samples = 1
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self):
+        while not self._stop.wait(self.interval_seconds):
+            self.peak = max(self.peak, int(self.process.memory_info().rss))
+            self.samples += 1
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self._stop.set()
+        self._thread.join()
+        self.peak = max(self.peak, int(self.process.memory_info().rss))
+        self.samples += 1
 
 
 def _json_ready(value):
@@ -113,7 +156,7 @@ def _write_run_contract(
     dataset: PreparedDataset,
     task: Task,
     model_name: ModelName,
-    swarm_name: SwarmName,
+    selection_provenance: dict,
     params: HyperParameters,
     protocol: ProtocolName,
     modeling_mode: ModelingMode,
@@ -131,9 +174,9 @@ def _write_run_contract(
         "model": model_name,
         "protocol": protocol,
         "modeling_mode": modeling_mode,
-        "optimizer": "fixed_published_preset_or_supplied_parameters",
+        "selection_source": selection_provenance["selection_source"],
+        "selection_provenance": selection_provenance,
         "run_mode": run_mode,
-        "swarm_preset": swarm_name,
         "seed": seed,
         "deterministic_ops": deterministic_ops,
         "threshold": threshold,
@@ -145,12 +188,92 @@ def _write_run_contract(
     )
 
 
+def _paper_comparison_eligibility(
+    dataset: PreparedDataset,
+    *,
+    task: Task,
+    model_name: ModelName,
+    params: HyperParameters,
+    protocol: ProtocolName,
+    selection_provenance: dict,
+    max_test_samples: int | None,
+) -> tuple[bool, list[str], str | None]:
+    reasons: list[str] = []
+    algorithm = selection_provenance.get("algorithm")
+    split_checksum = prepared_split_checksum(dataset)
+    metadata_checksum = dataset.metadata.get("split", {}).get("checksum_sha256")
+    if dataset.metadata.get("dataset") != "cicids2017":
+        reasons.append("paper comparison is CIC-IDS2017 only")
+    if protocol != "paper_replication":
+        reasons.append("protocol is not paper_replication")
+    if selection_provenance.get("selection_source") != "paper_preset":
+        reasons.append("selection_source is not paper_preset")
+    if algorithm not in {"pso", "ssa"}:
+        reasons.append("paper preset algorithm is not pso or ssa")
+    if max_test_samples is not None:
+        reasons.append("test set was subsampled")
+    if not dataset.metadata.get("paper_split_match", False):
+        reasons.append("cached class counts do not match the paper split")
+    if tuple(dataset.class_names) != tuple(PAPER_CIC_MULTICLASS_NAMES):
+        reasons.append("class order does not match the paper")
+    if split_checksum is None or metadata_checksum != split_checksum:
+        reasons.append("saved split checksum is missing or does not match persisted indices")
+    if algorithm in {"pso", "ssa"} and params != get_paper_preset(task, model_name, algorithm):
+        reasons.append("parameters do not exactly match the selected paper preset")
+    return not reasons, reasons, split_checksum
+
+
+def _validate_selection_provenance(
+    provenance: dict,
+    *,
+    dataset: PreparedDataset,
+    task: Task,
+    model_name: ModelName,
+    params: HyperParameters,
+) -> None:
+    source = provenance.get("selection_source")
+    expected_algorithms = {
+        "pso_search": "pso",
+        "ssa_search": "ssa",
+        "random_search": "random",
+    }
+    allowed = {
+        "paper_preset",
+        "pso_search",
+        "ssa_search",
+        "random_search",
+        "manual",
+        "transferred_cic_preset",
+    }
+    if source not in allowed:
+        raise ValueError(f"Invalid or missing selection_source: {source!r}")
+    expected_algorithm = expected_algorithms.get(source)
+    if expected_algorithm and provenance.get("algorithm") != expected_algorithm:
+        raise ValueError(
+            f"selection_source={source} requires algorithm={expected_algorithm}"
+        )
+    expected_fields = {
+        "dataset": dataset.metadata.get("dataset"),
+        "task": task,
+        "model": model_name,
+    }
+    for key, expected in expected_fields.items():
+        actual = provenance.get(key)
+        if actual != expected:
+            raise ValueError(
+                f"Selection provenance {key} mismatch: expected {expected!r}, got {actual!r}"
+            )
+    decoded = provenance.get("decoded_parameters")
+    if decoded is not None and decoded != params.to_dict():
+        raise ValueError("Selection provenance decoded parameters do not match params")
+
+
 def train_and_evaluate(
     dataset: PreparedDataset,
     *,
     task: Task,
     model_name: ModelName,
-    swarm_name: SwarmName,
+    swarm_name: SwarmName | None = None,
     params: HyperParameters,
     output_dir: Path | str,
     seed: int = 42,
@@ -166,11 +289,45 @@ def train_and_evaluate(
     deterministic_ops: bool = True,
     allow_existing: bool = False,
     run_mode: str = "full",
+    selection_provenance: dict | None = None,
+    selection_fitness: FitnessName = "macro_f1",
+    selection_patience: int = 10,
+    selection_min_delta: float = 0.0,
+    false_positive_cost: float = 1.0,
+    false_negative_cost: float = 1.0,
 ) -> dict:
     import psutil
     import tensorflow as tf
 
     dataset.assert_integrity()
+    validate_fitness_configuration(
+        task, selection_fitness, false_positive_cost, false_negative_cost
+    )
+    if selection_patience < 0:
+        raise ValueError("selection_patience cannot be negative")
+    if not math.isfinite(selection_min_delta) or selection_min_delta < 0:
+        raise ValueError("selection_min_delta must be finite and non-negative")
+    if selection_provenance is None:
+        if swarm_name is None:
+            raise ValueError("selection_provenance is required")
+        selection_provenance = {
+            "selection_source": "paper_preset",
+            "algorithm": swarm_name,
+            "seed": seed,
+            "dataset": dataset.metadata.get("dataset"),
+            "task": task,
+            "model": model_name,
+            "cache_identity": cache_identity(dataset),
+            "decoded_parameters": params.to_dict(),
+            "legacy_api_inference": True,
+        }
+    _validate_selection_provenance(
+        selection_provenance,
+        dataset=dataset,
+        task=task,
+        model_name=model_name,
+        params=params,
+    )
     cached_protocol = dataset.metadata.get("protocol")
     if cached_protocol is None and dataset.metadata.get("paper_split_match"):
         cached_protocol = "paper_replication"
@@ -209,6 +366,11 @@ def train_and_evaluate(
         if epochs_override < 1:
             raise ValueError("epochs_override must be positive")
         params = replace(params, epochs=epochs_override)
+    selection_provenance = {
+        **selection_provenance,
+        "execution_parameters": params.to_dict(),
+        "epochs_override": epochs_override,
+    }
 
     train_x, train_y, train_subset = _select(
         dataset.train_x, dataset.labels("train", task), max_train_samples, seed
@@ -253,27 +415,34 @@ def train_and_evaluate(
             self.times.append(time.perf_counter() - self._start)
 
     timer = EpochTimer()
-    callbacks: list = [timer]
-    if requested_rigorous:
-        callbacks.append(
-            tf.keras.callbacks.EarlyStopping(
-                monitor="val_loss", patience=10, restore_best_weights=True
-            )
-        )
-    process = psutil.Process()
-    initial_rss = process.memory_info().rss
-    fit_started = time.perf_counter()
-    history = model.fit(
-        train_x,
-        train_y,
-        validation_data=(val_x, val_y),
+    selector = validation_selection_callback(
+        val_x,
+        val_y,
+        task=task,
+        fitness_name=selection_fitness,
         batch_size=params.batch_size,
-        epochs=params.epochs,
-        shuffle=True,
-        callbacks=callbacks,
-        verbose=verbose,
+        patience=selection_patience,
+        min_delta=selection_min_delta,
+        false_positive_cost=false_positive_cost,
+        false_negative_cost=false_negative_cost,
+        restore_best_weights=requested_rigorous,
+        early_stopping=requested_rigorous,
     )
-    fit_seconds = time.perf_counter() - fit_started
+    callbacks: list = [selector, timer]
+    process = psutil.Process()
+    with _MemorySampler(process) as memory_sampler:
+        fit_started = time.perf_counter()
+        history = model.fit(
+            train_x,
+            train_y,
+            validation_data=(val_x, val_y),
+            batch_size=params.batch_size,
+            epochs=params.epochs,
+            shuffle=True,
+            callbacks=callbacks,
+            verbose=verbose,
+        )
+        fit_seconds = time.perf_counter() - fit_started
 
     threshold_selection = {"policy": "fixed", "validation_score": None}
     if task == "binary" and optimize_threshold:
@@ -286,11 +455,12 @@ def train_and_evaluate(
             "validation_score": validation_score,
         }
 
-    predict_started = time.perf_counter()
-    probabilities = model.predict(
-        test_x, batch_size=params.batch_size, verbose=verbose
-    )
-    predict_seconds = time.perf_counter() - predict_started
+    with _MemorySampler(process) as prediction_memory_sampler:
+        predict_started = time.perf_counter()
+        probabilities = model.predict(
+            test_x, batch_size=params.batch_size, verbose=verbose
+        )
+        predict_seconds = time.perf_counter() - predict_started
     if task == "binary":
         probabilities = probabilities.reshape(-1)
         predictions = (probabilities >= threshold).astype(np.uint8)
@@ -304,17 +474,42 @@ def train_and_evaluate(
         probabilities=probabilities,
     )
 
-    expected = np.asarray(
-        PAPER_BINARY_CONFUSIONS[swarm_name]
-        if task == "binary"
-        else PAPER_MULTICLASS_CONFUSIONS[swarm_name],
-        dtype=np.int64,
+    paper_eligible, paper_reasons, split_checksum = _paper_comparison_eligibility(
+        dataset,
+        task=task,
+        model_name=model_name,
+        params=params,
+        protocol=protocol,
+        selection_provenance=selection_provenance,
+        max_test_samples=max_test_samples,
     )
     comparison = None
-    if matrix.shape == expected.shape and len(test_y) == int(expected.sum()):
+    paper_algorithm = selection_provenance.get("algorithm")
+    if paper_eligible:
+        expected = np.asarray(
+            PAPER_BINARY_CONFUSIONS[paper_algorithm]
+            if task == "binary"
+            else PAPER_MULTICLASS_CONFUSIONS[paper_algorithm],
+            dtype=np.int64,
+        )
+        if matrix.shape != expected.shape or len(test_y) != int(expected.sum()):
+            raise AssertionError(
+                "Paper-comparison eligibility passed but test matrix shape/count differs"
+            )
         comparison = matrix_distance(matrix, expected)
 
-    model.save(output_dir / "model.keras")
+    latency_batch_size = min(len(test_x), max(1, params.batch_size))
+    latency_batch = test_x[:latency_batch_size]
+    model.predict_on_batch(latency_batch)  # explicit warm-up, excluded from timings
+    latency_samples = []
+    for _ in range(5):
+        latency_started = time.perf_counter()
+        model.predict_on_batch(latency_batch)
+        latency_samples.append(time.perf_counter() - latency_started)
+
+    model_path = output_dir / "model.keras"
+    model.save(model_path)
+    serialized_model_size = model_path.stat().st_size
     (output_dir / "model_summary.txt").write_text(
         _model_summary(model), encoding="utf-8"
     )
@@ -325,6 +520,28 @@ def train_and_evaluate(
     (output_dir / "history.json").write_text(
         json.dumps(history_payload, indent=2), encoding="utf-8"
     )
+    selection_outcome = selector.outcome()
+    (output_dir / "selection_history.json").write_text(
+        json.dumps(
+            {
+                "fitness_name": selection_fitness,
+                "best_epoch": selection_outcome.best_epoch,
+                "best_fitness": selection_outcome.best_score,
+                "patience": selection_patience,
+                "min_delta": selection_min_delta,
+                "early_stopping": requested_rigorous,
+                "best_weights_restored": requested_rigorous,
+                "history": selection_outcome.history,
+                "cost": (
+                    cost_equation(false_positive_cost, false_negative_cost)
+                    if selection_fitness == "cost_sensitive"
+                    else None
+                ),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     np.savetxt(
         output_dir / "confusion_matrix.csv", matrix, fmt="%d", delimiter=","
     )
@@ -334,6 +551,21 @@ def train_and_evaluate(
     np.save(output_dir / "train_subset_indices.npy", train_subset)
     np.save(output_dir / "validation_subset_indices.npy", val_subset)
     np.save(output_dir / "test_subset_indices.npy", test_subset)
+    subset_payload = {
+        "selection_policy": "deterministic_stratified_by_split_labels",
+        "dataset_split_checksum_sha256": split_checksum,
+        "seed_policy": {"train": seed, "validation": seed + 1, "test": seed + 2},
+        "train": subset_manifest(train_subset, dataset.labels("train", task)),
+        "validation": subset_manifest(val_subset, dataset.labels("val", task)),
+        "test": subset_manifest(test_subset, dataset.labels("test", task)),
+    }
+    (output_dir / "subset_manifest.json").write_text(
+        json.dumps(subset_payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    (output_dir / "selection_provenance.json").write_text(
+        json.dumps(_json_ready(selection_provenance), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     (output_dir / "best_parameters.json").write_text(
         json.dumps(params.to_dict(), indent=2, sort_keys=True), encoding="utf-8"
     )
@@ -381,24 +613,28 @@ def train_and_evaluate(
         if cached_indices.exists():
             shutil.copy2(cached_indices, output_dir / cached_indices.name)
 
-    best_metric_name = (
-        "val_accuracy" if "val_accuracy" in history_payload else "val_loss"
-    )
-    best_values = np.asarray(history_payload[best_metric_name])
-    best_offset = int(
-        np.argmax(best_values)
-        if best_metric_name != "val_loss"
-        else np.argmin(best_values)
-    )
     threshold_payload = {"threshold": threshold, **threshold_selection}
+    latency_median = float(np.median(latency_samples))
     timing = {
         "fit_seconds": fit_seconds,
         "predict_seconds": predict_seconds,
+        "inference_seconds_per_sample": predict_seconds / max(1, len(test_y)),
+        "inference_samples_per_second": len(test_y) / max(predict_seconds, 1e-12),
+        "warmed_batch_latency": {
+            "batch_size": latency_batch_size,
+            "warmup_batches_excluded": 1,
+            "timed_batches": len(latency_samples),
+            "sample_seconds": latency_samples,
+            "median_batch_seconds": latency_median,
+            "median_seconds_per_sample": latency_median / latency_batch_size,
+        },
         "total_epoch_seconds": float(sum(timer.times)),
         "epoch_seconds": timer.times,
-        "observed_peak_rss_bytes": int(
-            max(initial_rss, process.memory_info().rss)
+        "peak_rss_bytes_periodic": int(
+            max(memory_sampler.peak, prediction_memory_sampler.peak)
         ),
+        "rss_sampling_interval_seconds": memory_sampler.interval_seconds,
+        "rss_sample_count": memory_sampler.samples + prediction_memory_sampler.samples,
     }
     (output_dir / "timing.json").write_text(
         json.dumps(timing, indent=2), encoding="utf-8"
@@ -409,6 +645,7 @@ def train_and_evaluate(
     )
     dataset_manifest = {
         "cache_dir": str(dataset.cache_dir.resolve()),
+        "cache_identity": cache_identity(dataset),
         "metadata": dataset.metadata,
         "cache_control_sha256": {
             path.name: _sha256(path)
@@ -431,7 +668,7 @@ def train_and_evaluate(
         dataset=dataset,
         task=task,
         model_name=model_name,
-        swarm_name=swarm_name,
+        selection_provenance=selection_provenance,
         params=params,
         protocol=protocol,
         modeling_mode=modeling_mode,
@@ -454,7 +691,8 @@ def train_and_evaluate(
         "protocol": protocol,
         "run_type": "fixed parameters; not an optimizer search",
         "run_mode": run_mode,
-        "swarm_preset": swarm_name,
+        "selection_source": selection_provenance["selection_source"],
+        "selection_provenance": selection_provenance,
         "seed": seed,
         "parameters": params.to_dict(),
         "parameter_count": int(model.count_params()),
@@ -465,14 +703,33 @@ def train_and_evaluate(
             "validation": int(len(val_y)),
             "test": int(len(test_y)),
         },
-        "best_validation_epoch": best_offset + 1,
+        "serialized_model_size_bytes": int(serialized_model_size),
+        "best_validation_epoch": selection_outcome.best_epoch,
         "best_validation_metric": {
-            "name": best_metric_name,
-            "value": float(best_values[best_offset]),
+            "name": selection_fitness,
+            "value": selection_outcome.best_score,
+            "selection_rule": (
+                "maximum validation fitness; restored best epoch weights"
+                if requested_rigorous
+                else "maximum validation fitness recorded; paper-protocol endpoint weights retained"
+            ),
+            "best_weights_restored": requested_rigorous,
+            "patience": selection_patience,
+            "min_delta": selection_min_delta,
         },
+        "selection_fitness_definition": (
+            cost_equation(false_positive_cost, false_negative_cost)
+            if selection_fitness == "cost_sensitive"
+            else {"objective": f"maximize validation {selection_fitness}"}
+        ),
         "threshold": threshold_payload,
         "metrics": _json_ready(metrics),
         "paper_confusion_comparison": comparison,
+        "paper_comparison_eligibility": {
+            "eligible": paper_eligible,
+            "reasons": paper_reasons,
+            "split_checksum_sha256": split_checksum,
+        },
         "timing": timing,
         "tensorflow_version": tf.__version__,
     }
@@ -499,84 +756,91 @@ def validation_fitness(
     false_positive_cost: float = 1.0,
     false_negative_cost: float = 1.0,
     modeling_mode: ModelingMode = "feature_axis_replication",
-) -> float:
+    patience: int = 10,
+    min_delta: float = 0.0,
+    return_details: bool = False,
+) -> float | dict:
     """Evaluate one candidate on validation only; test arrays are never accessed."""
 
     import tensorflow as tf
 
-    set_reproducible_seed(seed)
-    if epoch_cap is not None:
-        params = replace(params, epochs=min(params.epochs, epoch_cap))
-    train_x, train_y, _ = _select(
-        dataset.train_x,
-        dataset.labels("train", task),
-        max_train_samples,
-        seed,
+    validate_fitness_configuration(
+        task, fitness_name, false_positive_cost, false_negative_cost
     )
-    val_x, val_y, _ = _select(
-        dataset.val_x,
-        dataset.labels("val", task),
-        max_val_samples,
-        seed + 1,
-    )
-    train_x = reshape_for_model(train_x, model_name, modeling_mode)
-    val_x = reshape_for_model(val_x, model_name, modeling_mode)
-    model = build_model(
-        model_name,
-        task,
-        params,
-        feature_count=(
-            int(train_x.shape[2])
-            if modeling_mode == "temporal_window"
-            else len(dataset.feature_names)
-        ),
-        class_count=2 if task == "binary" else len(dataset.class_names),
-        modeling_mode=modeling_mode,
-        time_steps=(
-            int(train_x.shape[1]) if modeling_mode == "temporal_window" else None
-        ),
-    )
-    model.fit(
-        train_x,
-        train_y,
-        validation_data=(val_x, val_y),
-        batch_size=params.batch_size,
-        epochs=params.epochs,
-        shuffle=True,
-        verbose=0,
-    )
-    probabilities = model.predict(val_x, batch_size=params.batch_size, verbose=0)
-    prediction = (
-        (probabilities.reshape(-1) >= 0.5).astype(np.uint8)
-        if task == "binary"
-        else np.argmax(probabilities, axis=1).astype(np.uint8)
-    )
-    if fitness_name == "accuracy":
-        fitness = accuracy_score(val_y, prediction)
-    elif fitness_name == "macro_f1":
-        fitness = f1_score(val_y, prediction, average="macro", zero_division=0)
-    elif fitness_name == "cost_sensitive":
-        if task == "binary":
-            false_positives = np.sum((val_y == 0) & (prediction == 1))
-            false_negatives = np.sum((val_y == 1) & (prediction == 0))
-            true_negatives = np.sum((val_y == 0) & (prediction == 0))
-            true_positives = np.sum((val_y == 1) & (prediction == 1))
-            false_alarm_rate = false_positives / max(
-                1, false_positives + true_negatives
-            )
-            false_negative_rate = false_negatives / max(
-                1, false_negatives + true_positives
-            )
-            cost = (
-                false_positive_cost * false_alarm_rate
-                + false_negative_cost * false_negative_rate
-            ) / max(1e-12, false_positive_cost + false_negative_cost)
-        else:
-            cost = np.mean(val_y != prediction) * false_negative_cost
-        fitness = -float(cost)
-    else:
-        raise ValueError(f"Unknown fitness: {fitness_name}")
-    del model, train_x, train_y, val_x, val_y, probabilities, prediction
-    tf.keras.backend.clear_session()
-    gc.collect()
-    return float(fitness)
+    model = None
+    try:
+        set_reproducible_seed(seed)
+        if epoch_cap is not None:
+            params = replace(params, epochs=min(params.epochs, epoch_cap))
+        train_labels = dataset.labels("train", task)
+        validation_labels = dataset.labels("val", task)
+        train_x, train_y, train_indices = _select(
+            dataset.train_x, train_labels, max_train_samples, seed
+        )
+        val_x, val_y, validation_indices = _select(
+            dataset.val_x, validation_labels, max_val_samples, seed + 1
+        )
+        train_manifest = subset_manifest(train_indices, train_labels)
+        validation_manifest = subset_manifest(validation_indices, validation_labels)
+        train_x = reshape_for_model(train_x, model_name, modeling_mode)
+        val_x = reshape_for_model(val_x, model_name, modeling_mode)
+        model = build_model(
+            model_name,
+            task,
+            params,
+            feature_count=(
+                int(train_x.shape[2])
+                if modeling_mode == "temporal_window"
+                else len(dataset.feature_names)
+            ),
+            class_count=2 if task == "binary" else len(dataset.class_names),
+            modeling_mode=modeling_mode,
+            time_steps=(
+                int(train_x.shape[1]) if modeling_mode == "temporal_window" else None
+            ),
+        )
+        selector = validation_selection_callback(
+            val_x,
+            val_y,
+            task=task,
+            fitness_name=fitness_name,
+            batch_size=params.batch_size,
+            patience=patience,
+            min_delta=min_delta,
+            false_positive_cost=false_positive_cost,
+            false_negative_cost=false_negative_cost,
+        )
+        model.fit(
+            train_x,
+            train_y,
+            validation_data=(val_x, val_y),
+            batch_size=params.batch_size,
+            epochs=params.epochs,
+            shuffle=True,
+            callbacks=[selector],
+            verbose=0,
+        )
+        outcome = selector.outcome()
+        details = {
+            "fitness": outcome.best_score,
+            "fitness_name": fitness_name,
+            "best_epoch": outcome.best_epoch,
+            "epochs_completed": outcome.epochs_completed,
+            "fitness_history": outcome.history,
+            "selection_rule": "maximum per-epoch validation fitness; best weights restored",
+            "patience": patience,
+            "min_delta": min_delta,
+            "train_subset": train_manifest,
+            "validation_subset": validation_manifest,
+            "cost": (
+                cost_equation(false_positive_cost, false_negative_cost)
+                if fitness_name == "cost_sensitive"
+                else None
+            ),
+        }
+        return details if return_details else float(outcome.best_score)
+    finally:
+        if model is not None:
+            del model
+        tf.keras.backend.clear_session()
+        gc.collect()

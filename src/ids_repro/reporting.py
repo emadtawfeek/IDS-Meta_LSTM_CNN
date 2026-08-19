@@ -13,7 +13,7 @@ from .config import (
     PAPER_CIC_MULTICLASS_NAMES,
     PAPER_MULTICLASS_CONFUSIONS,
 )
-from .data import deterministic_subset, load_prepared
+from .data import deterministic_stratified_subset, load_prepared
 from .metrics import (
     evaluate_predictions,
     matrix_distance,
@@ -104,9 +104,20 @@ def audit_saved_run(
             raise AssertionError(
                 "Prediction count matches neither the test set nor the saved sample count"
             )
-        indices = deterministic_subset(len(full_truth), len(predictions), seed + 2)
+        saved_indices = run_dir / "test_subset_indices.npy"
+        indices = (
+            np.load(saved_indices)
+            if saved_indices.exists()
+            else deterministic_stratified_subset(
+                full_truth, len(predictions), seed + 2
+            )
+        )
         truth = np.asarray(full_truth[indices])
-        truth_source = "deterministic saved-run test subset reconstructed from seed"
+        truth_source = (
+            "saved deterministic stratified test-subset indices"
+            if saved_indices.exists()
+            else "deterministic stratified test subset reconstructed from labels and seed"
+        )
 
     probabilities_path = run_dir / "probabilities.npy"
     probabilities = np.load(probabilities_path) if probabilities_path.exists() else None
@@ -123,11 +134,20 @@ def audit_saved_run(
         else PAPER_MULTICLASS_CONFUSIONS[paper_algorithm],
         dtype=np.int64,
     )
-    comparison = (
-        matrix_distance(matrix, expected)
-        if matrix.shape == expected.shape and matrix.sum() == expected.sum()
-        else None
-    )
+    saved_eligibility = saved_metrics.get("paper_comparison_eligibility", {})
+    comparison = None
+    if saved_eligibility.get("eligible"):
+        saved_algorithm = saved_metrics.get("selection_provenance", {}).get(
+            "algorithm"
+        )
+        if saved_algorithm != paper_algorithm:
+            raise ValueError(
+                f"Requested paper algorithm {paper_algorithm} differs from saved "
+                f"eligible preset {saved_algorithm}"
+            )
+        if matrix.shape != expected.shape or matrix.sum() != expected.sum():
+            raise AssertionError("Saved paper-comparison eligibility contradicts run arrays")
+        comparison = matrix_distance(matrix, expected)
     source_hashes = {
         path.name: sha256_file(path)
         for path in sorted(run_dir.iterdir())

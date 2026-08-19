@@ -447,4 +447,34 @@ Recommended scientific sequence:
 8. only add a temporal table after constructing and validating the GeneratedFlows
    adapter and documenting its grouping/window label policy.
 
+## 2026-08-19 reproducibility correction addendum
+
+The implementation was re-audited from baseline commit
+`441ba6b7e4293af9eab155d79b2d2417557ec2eb`. The detailed additive change log is
+`CORRECTION_MANIFEST_2026-08-19.md`.
+
+The corrected search objective is now evaluated after every epoch and uses the
+same requested fitness, patience, and `min_delta` rules for PSO, SSA, and the
+random baseline. Search and rigorous final training restore the selected epoch's
+weights. Fixed paper-protocol runs retain their endpoint weights while recording
+the best validation epoch, so fixed-epoch paper comparison is not silently changed.
+
+Capped samples are now deterministic stratified row subsets with saved class
+counts, indices, and checksums. CIC `rigorous_evaluation` remains only a stratified
+random row split: it is not leakage-free, group-independent, capture-independent,
+session-independent, or time-independent. Temporal config fields remain
+unavailable until a complete timestamp/session-aware adapter is implemented.
+
+Search checkpoint/resume now persists optimizer population/dynamics, best states,
+iteration/member counters, evaluation trace, candidate cache, and RNG state after
+every completed candidate. The trace distinguishes proposals, unique decoded
+configurations, cache hits, neural-fit attempts, completed fits, and failures.
+Parameter provenance, strict paper-comparison eligibility, expanded metrics and
+latency/memory reporting, and prediction-level McNemar comparison were also added.
+
+The matched PSO/SSA/random run recorded in
+`evidence/review-2026-08-19/matched_smoke_summary.json` is a two-candidate,
+one-epoch engineering smoke only. It is not a scientific optimizer comparison or
+a paper reproduction result.
+
 Exact PowerShell commands and artifact descriptions are in `README.md`.

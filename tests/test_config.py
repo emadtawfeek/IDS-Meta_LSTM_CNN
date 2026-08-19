@@ -1,3 +1,5 @@
+import pytest
+
 from ids_repro.config import ExperimentConfig, PAPER_CIC_TEST_COUNTS, get_paper_preset
 
 
@@ -29,3 +31,31 @@ def test_experiment_config_yaml_round_trip(tmp_path):
     )
     original.save(path)
     assert ExperimentConfig.load(path) == original
+
+
+def test_temporal_config_is_explicitly_unavailable():
+    config = ExperimentConfig(
+        dataset="cicids2017",
+        cache_dir="cache",
+        output_dir="results",
+        task="binary",
+        model="cnn-lstm",
+        optimizer="pso",
+        modeling_mode="temporal_window",
+        window_size=10,
+    )
+    with pytest.raises(ValueError, match="unavailable"):
+        config.validate()
+
+
+def test_nsl_empty_paper_preset_is_rejected():
+    config = ExperimentConfig(
+        dataset="nsl-kdd",
+        cache_dir="cache",
+        output_dir="results",
+        task="binary",
+        model="cnn-lstm",
+        selection_source="paper_preset",
+    )
+    with pytest.raises(ValueError, match="no paper preset"):
+        config.validate()

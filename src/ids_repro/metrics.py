@@ -10,6 +10,7 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     f1_score,
+    matthews_corrcoef,
     precision_score,
     recall_score,
     roc_auc_score,
@@ -48,6 +49,7 @@ def evaluate_predictions(
             "precision_attack": precision_score(truth, prediction, pos_label=1, zero_division=0),
             "recall_attack": recall_score(truth, prediction, pos_label=1, zero_division=0),
             "f1_attack": f1_score(truth, prediction, pos_label=1, zero_division=0),
+            "matthews_correlation_coefficient": matthews_corrcoef(truth, prediction),
             "specificity": tn / (tn + fp) if tn + fp else 0.0,
             "false_alarm_rate": fp / (fp + tn) if fp + tn else 0.0,
             "false_negative_rate": fn / (fn + tp) if fn + tp else 0.0,
@@ -60,6 +62,15 @@ def evaluate_predictions(
             ),
             "f1_macro": f1_score(
                 truth, prediction, labels=labels, average="macro", zero_division=0
+            ),
+            "precision_micro": precision_score(
+                truth, prediction, labels=labels, average="micro", zero_division=0
+            ),
+            "recall_micro": recall_score(
+                truth, prediction, labels=labels, average="micro", zero_division=0
+            ),
+            "f1_micro": f1_score(
+                truth, prediction, labels=labels, average="micro", zero_division=0
             ),
             "precision_weighted": precision_score(
                 truth, prediction, labels=labels, average="weighted", zero_division=0
@@ -85,6 +96,7 @@ def evaluate_predictions(
         metrics = {
             "accuracy": accuracy_score(truth, prediction),
             "balanced_accuracy": balanced_accuracy_score(truth, prediction),
+            "matthews_correlation_coefficient": matthews_corrcoef(truth, prediction),
             "precision_macro": precision_score(
                 truth, prediction, labels=labels, average="macro", zero_division=0
             ),
@@ -133,6 +145,7 @@ def evaluate_predictions(
                 metrics["pr_auc_macro"] = None
     for code, name in enumerate(target_names):
         metrics[f"support_{name}"] = int(np.sum(truth == code))
+        metrics[f"predicted_{name}"] = int(np.sum(prediction == code))
     assert_evaluation_consistency(
         truth, prediction, matrix, report, labels=labels, target_names=target_names
     )

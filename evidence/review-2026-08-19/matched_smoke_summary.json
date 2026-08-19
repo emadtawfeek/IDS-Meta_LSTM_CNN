@@ -1,0 +1,52 @@
+{
+  "status": "engineering feasibility smoke only; no scientific comparison",
+  "date": "2026-08-19",
+  "dataset": "cicids2017",
+  "task": "binary",
+  "model": "cnn-lstm",
+  "seed": 42,
+  "fitness": "macro_f1",
+  "population_size": 2,
+  "iterations": 1,
+  "evaluation_budget_per_algorithm": 2,
+  "epoch_cap": 1,
+  "max_train_samples": 2000,
+  "max_validation_samples": 1000,
+  "dataset_split_checksum_sha256": "3d8dbe2d93863e4d4bd3fca396792427d883c29e32d1866cade477ce9705925e",
+  "training_subset": {
+    "class_counts": {"0": 1662, "1": 338},
+    "indices_checksum_sha256": "51042038a20a88a6acc717373be68ff26cc8c3b8fb7f87f821ed258524cd384a"
+  },
+  "validation_subset": {
+    "class_counts": {"0": 830, "1": 170},
+    "indices_checksum_sha256": "873cb6a97539ed1e7387f9a5ae4705fdf4019d9673e838101856d6b24efa265e"
+  },
+  "algorithms": {
+    "pso": {
+      "best_validation_fitness": 0.453551912568306,
+      "proposals": 2,
+      "unique_configurations": 2,
+      "completed_nn_fits": 2,
+      "cache_hits": 0,
+      "failed_candidates": 0
+    },
+    "ssa": {
+      "best_validation_fitness": 0.453551912568306,
+      "proposals": 2,
+      "unique_configurations": 2,
+      "completed_nn_fits": 2,
+      "cache_hits": 0,
+      "failed_candidates": 0
+    },
+    "random": {
+      "best_validation_fitness": 0.453551912568306,
+      "proposals": 2,
+      "unique_configurations": 2,
+      "completed_nn_fits": 2,
+      "cache_hits": 0,
+      "failed_candidates": 0
+    }
+  },
+  "interpretation": "With one iteration and a common seed, all three methods evaluate the same initial normalized population. Equal scores are expected and are not an optimizer comparison.",
+  "local_ignored_results_root": "results/review-2026-08-19/matched-smoke"
+}

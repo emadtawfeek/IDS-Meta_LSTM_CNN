@@ -74,8 +74,11 @@ constant-feature removals, two unstratified random splits with seed 42, and a
 training-only MinMaxScaler. It gives 1,764,558/252,080/504,160 rows and exactly the
 paper’s test class totals.
 
-`rigorous_evaluation` uses class-stratified row splits. For NSL-KDD it preserves the official
-test set and stratifies the validation holdout from `KDDTrain+`. Every corrected
+`rigorous_evaluation` uses a **stratified random row split** for CIC-IDS2017. It is
+not a leakage-free, group-independent, capture-independent, session-independent,
+or time-independent protocol because the MachineLearningCVE adapter has no stable
+group/session identity. For NSL-KDD it preserves the official test set and
+stratifies the validation holdout from `KDDTrain+`. Every corrected
 preparation saves split indices, mappings, feature names, source hashes, and the
 train-fitted transformer.
 
@@ -84,13 +87,11 @@ train-fitted transformer.
 - CNN and CNN-LSTM: `(samples, features, 1)`
 - LSTM: `(samples, 1, features)`
 
-`temporal_window` requires `(samples, time_steps, features)`. It is rejected for
-MachineLearningCVE and NSL-KDD because those tables have no timestamps or reliable
-session identifiers. The temporal utilities only construct time-sorted windows
-inside one capture/session group and include boundary assertions. CIC’s
-`GeneratedLabelledFlows` files contain timestamps and capture identifiers and can
-be adapted to that separate protocol; it must never be described as the paper’s
-row-level experiment.
+`temporal_window`, `window_size`, and `stride` are unavailable in executable
+experiment configs until a complete timestamp/session-aware dataset adapter is
+implemented. The generic development helpers are not connected to either dataset
+adapter or the CLI. `feature_axis_replication` must never be described as temporal
+modeling.
 
 ## Verify the existing recovered paper cache
 
@@ -137,7 +138,8 @@ non-empty result directory.
   --cache-dir ".\cache\cicids2017" `
   --task binary `
   --model cnn-lstm `
-  --swarm ssa `
+  --selection-source paper_preset `
+  --paper-optimizer ssa `
   --protocol paper_replication `
   --mode smoke `
   --output-dir ".\results\cicids2017\binary\cnn-lstm\fixed_ssa\seed_42_smoke"
@@ -155,7 +157,8 @@ result is correctly labeled “fixed parameters; not an optimizer search.”
   --cache-dir ".\cache\cicids2017" `
   --task binary `
   --model cnn-lstm `
-  --swarm ssa `
+  --selection-source paper_preset `
+  --paper-optimizer ssa `
   --protocol paper_replication `
   --mode full `
   --output-dir ".\results\cicids2017\binary\cnn-lstm\fixed_ssa\seed_42"
@@ -168,7 +171,8 @@ Multiclass Table 7 configuration:
   --cache-dir ".\cache\cicids2017" `
   --task multiclass `
   --model cnn-lstm `
-  --swarm ssa `
+  --selection-source paper_preset `
+  --paper-optimizer ssa `
   --protocol paper_replication `
   --mode full `
   --output-dir ".\results\cicids2017\multiclass\cnn-lstm\fixed_ssa\seed_42"
@@ -187,8 +191,12 @@ Edit the YAML output path before repeating a run.
 
 All search positions remain continuous normalized coordinates. Hyperparameters are
 decoded only for candidate evaluation. The objective accesses train/validation
-only, supports accuracy, macro-F1, or a cost-sensitive binary score, and records
-every position, decoded candidate, fitness, iteration, and elapsed time.
+only, supports accuracy, macro-F1, or a validated cost-sensitive binary score, and
+computes that objective after every epoch. Searches and rigorous final runs restore
+the best objective epoch and record the complete epoch history. Fixed paper-protocol
+runs retain endpoint weights while recording the best epoch, matching their stated
+fixed-epoch protocol. Capped data are deterministic label-stratified
+subsets with saved counts/checksums shared by PSO, SSA, and random search.
 
 Bounded search example:
 
@@ -205,6 +213,7 @@ Bounded search example:
   --epoch-cap 2 `
   --max-train-samples 20000 `
   --max-val-samples 5000 `
+  --checkpoint ".\results\cicids2017\binary\cnn-lstm\pso\seed_42_smoke\checkpoint.json" `
   --output ".\results\cicids2017\binary\cnn-lstm\pso\seed_42_smoke\search_result.json"
 ```
 
@@ -213,8 +222,29 @@ candidate budgets, epoch caps, and validation data. The stated paper budget is
 10 particles/salps × 100 iterations = 1,000 full model fits per architecture,
 task, and optimizer. That full search was intentionally not launched here.
 
-After search, pass its JSON to a fresh final training command using
-`--params-json`. Search does not evaluate the test set.
+Every completed candidate is atomically checkpointed with optimizer and RNG state.
+Resume the exact command with `--resume`; configuration and cache/split identity
+must still match. Decoded duplicate candidates reuse the checkpointed validation
+result and the trace distinguishes proposals, cache hits, fit attempts, completed
+neural fits, and failures.
+
+After search, pass the main search-result JSON—not the bare parameter file—to a
+fresh final training command. The selection source and search fitness are explicit:
+
+```powershell
+& $python -m ids_repro train `
+  --cache-dir ".\cache\cicids2017-rigorous" `
+  --task binary --model cnn-lstm `
+  --selection-source pso_search `
+  --params-json ".\results\cicids2017\binary\cnn-lstm\pso\seed_42\search_result.json" `
+  --selection-fitness macro_f1 `
+  --protocol rigorous_evaluation --seed 42 `
+  --output-dir ".\results\cicids2017\binary\cnn-lstm\pso\seed_42\final"
+```
+
+Search does not evaluate the test set. `random_search` is never labeled PSO/SSA.
+For NSL-KDD, an empty config cannot silently use a CIC preset; either supply
+manual/search parameters or explicitly use `transferred_cic_preset`.
 
 ## Audit and reporting commands
 
@@ -236,11 +266,24 @@ Recalculate paper metrics from the transcribed confusion matrices:
   --output-dir ".\results\paper-recalculation-new"
 ```
 
-New training artifacts include model, predictions, probabilities, truth labels,
+Compare two saved runs only when their truth arrays and test-subset checksums are
+identical:
+
+```powershell
+& $python -m ids_repro mcnemar `
+  --first-run ".\results\run-a" `
+  --second-run ".\results\run-b" `
+  --output ".\results\comparisons\run-a-vs-run-b-mcnemar.json"
+```
+
+New training artifacts include model, serialized size, predictions, probabilities, truth labels,
 threshold policy, configuration, history, confusion matrix, classification report,
-full macro/micro/weighted metrics, ROC-AUC/PR-AUC where probabilities exist, split
-subset indices, model summary and parameter count, environment, resource/timing
-data, and dataset/cache manifest.
+MCC and full macro/micro/weighted metrics, ROC-AUC/PR-AUC where probabilities exist,
+predicted class counts, split/subset indices and checksums, selection provenance,
+per-epoch selection fitness, model summary and parameter count, environment,
+periodically sampled peak RSS, warmed batch latency, throughput, and dataset/cache
+manifest. Paper confusion comparison is emitted only for an eligible complete CIC
+paper-protocol fixed-preset run.
 
 ## Repeated-seed claims
 
@@ -280,10 +323,26 @@ $seeds = @(42, 52, 62, 72, 82)
 foreach ($seed in $seeds) {
   & $python -m ids_repro train `
     --cache-dir ".\cache\cicids2017" `
-    --task binary --model cnn-lstm --swarm ssa `
+    --task binary --model cnn-lstm `
+    --selection-source paper_preset --paper-optimizer ssa `
     --protocol paper_replication --mode full `
     --seed $seed `
     --output-dir ".\results\cicids2017\binary\cnn-lstm\fixed_ssa\seed_$seed"
+}
+```
+
+NSL-KDD five-seed extension using an explicitly transferred CIC preset:
+
+```powershell
+$seeds = @(42, 52, 62, 72, 82)
+foreach ($seed in $seeds) {
+  & $python -m ids_repro train `
+    --cache-dir ".\cache\nsl-kdd-rigorous" `
+    --task multiclass --model cnn-lstm `
+    --selection-source transferred_cic_preset --paper-optimizer ssa `
+    --selection-fitness macro_f1 `
+    --protocol rigorous_evaluation --mode full --seed $seed `
+    --output-dir ".\results\nsl-kdd\multiclass\cnn-lstm\transferred_cic_ssa_preset\seed_$seed"
 }
 ```
 
@@ -300,5 +359,5 @@ A paper-budget corrected optimizer search is exactly:
 ```
 
 Repeat with `--algorithm pso` and `--algorithm random` at the same budget, then use
-each saved `best_parameters.json` in a fresh final `train --params-json` run. A
+each main `search_result.json` in a fresh final `train --params-json` run. A
 search result is not a test result.

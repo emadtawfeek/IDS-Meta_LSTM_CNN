@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import math
 from pathlib import Path
 from typing import Any, Literal
 
@@ -12,6 +13,14 @@ SwarmName = Literal["pso", "ssa"]
 ProtocolName = Literal["paper_replication", "rigorous_evaluation", "rigorous"]
 ModelingMode = Literal["feature_axis_replication", "temporal_window"]
 FitnessName = Literal["accuracy", "macro_f1", "cost_sensitive"]
+SelectionSource = Literal[
+    "paper_preset",
+    "pso_search",
+    "ssa_search",
+    "random_search",
+    "manual",
+    "transferred_cic_preset",
+]
 
 
 @dataclass(frozen=True)
@@ -67,6 +76,8 @@ class ExperimentConfig:
     protocol: ProtocolName = "rigorous_evaluation"
     modeling_mode: ModelingMode = "feature_axis_replication"
     optimizer: Literal["fixed", "pso", "ssa", "random"] = "fixed"
+    selection_source: SelectionSource = "manual"
+    parameters_json: str | None = None
     run_mode: Literal["smoke", "full"] = "full"
     population_size: int = 10
     iterations: int = 100
@@ -80,6 +91,10 @@ class ExperimentConfig:
     threshold: float = 0.5
     window_size: int | None = None
     stride: int = 1
+    selection_patience: int = 10
+    selection_min_delta: float = 0.0
+    pso_velocity_clip: float | None = None
+    resume: bool = False
     max_train_samples: int | None = None
     max_val_samples: int | None = None
     max_test_samples: int | None = None
@@ -90,14 +105,49 @@ class ExperimentConfig:
             raise ValueError("threshold must be between 0 and 1")
         if self.stride < 1:
             raise ValueError("stride must be positive")
-        if self.modeling_mode == "temporal_window" and (
-            self.window_size is None or self.window_size < 2
-        ):
-            raise ValueError("temporal_window mode requires window_size >= 2")
-        if self.false_positive_cost < 0 or self.false_negative_cost < 0:
-            raise ValueError("misclassification costs cannot be negative")
+        if self.modeling_mode == "temporal_window":
+            raise ValueError(
+                "temporal_window is unavailable until a timestamp/session-aware "
+                "dataset adapter is implemented; window_size and stride are inactive"
+            )
+        costs = (self.false_positive_cost, self.false_negative_cost)
+        if not all(math.isfinite(value) and value >= 0 for value in costs):
+            raise ValueError("misclassification costs must be finite and non-negative")
+        if self.fitness == "cost_sensitive" and self.task != "binary":
+            raise ValueError(
+                "cost_sensitive fitness currently supports binary tasks only; "
+                "a multiclass cost matrix is required for multiclass use"
+            )
+        if self.fitness == "cost_sensitive" and not any(costs):
+            raise ValueError("cost_sensitive fitness requires at least one positive cost")
         if self.population_size < 1 or self.iterations < 1:
             raise ValueError("population_size and iterations must be positive")
+        if self.selection_patience < 0:
+            raise ValueError("selection_patience cannot be negative")
+        if not math.isfinite(self.selection_min_delta) or self.selection_min_delta < 0:
+            raise ValueError("selection_min_delta must be finite and non-negative")
+        if self.pso_velocity_clip is not None and (
+            not math.isfinite(self.pso_velocity_clip) or self.pso_velocity_clip <= 0
+        ):
+            raise ValueError("pso_velocity_clip must be finite and positive")
+        if self.dataset == "nsl-kdd" and self.selection_source == "paper_preset":
+            raise ValueError(
+                "NSL-KDD has no paper preset; use transferred_cic_preset explicitly "
+                "or provide manual/search parameters"
+            )
+        if (
+            self.selection_source == "transferred_cic_preset"
+            and self.dataset != "nsl-kdd"
+        ):
+            raise ValueError("transferred_cic_preset is only valid for NSL-KDD")
+        if self.optimizer == "fixed" and self.selection_source in {
+            "manual", "pso_search", "ssa_search", "random_search"
+        }:
+            if not self.parameters_json and not self.hyperparameters:
+                raise ValueError(
+                    f"selection_source={self.selection_source} requires parameters_json "
+                    "or explicit hyperparameters"
+                )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

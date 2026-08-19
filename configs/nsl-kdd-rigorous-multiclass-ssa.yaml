@@ -1,11 +1,12 @@
 dataset: nsl-kdd
 cache_dir: cache/nsl-kdd-rigorous
-output_dir: results/nsl-kdd/multiclass/cnn-lstm/fixed_ssa/seed_42
+output_dir: results/nsl-kdd/multiclass/cnn-lstm/transferred_cic_ssa_preset/seed_42
 task: multiclass
 model: cnn-lstm
 protocol: rigorous_evaluation
 modeling_mode: feature_axis_replication
 optimizer: fixed
+selection_source: transferred_cic_preset
 run_mode: full
 swarm_preset: ssa
 seed: 42
@@ -14,5 +15,6 @@ fitness: macro_f1
 population_size: 10
 iterations: 100
 threshold: 0.5
-stride: 1
+selection_patience: 10
+selection_min_delta: 0.0
 hyperparameters: {}

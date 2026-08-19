@@ -60,7 +60,10 @@ def row_level_split(
     method = (
         "two shuffled train_test_split calls (70/10/20), random_state=42, no stratification"
         if not rigorous
-        else "two class-stratified shuffled train_test_split calls (70/10/20)"
+        else (
+            "stratified random row split: two shuffled train_test_split calls "
+            "(70/10/20); not group-, session-, capture-, or time-independent"
+        )
     )
     split = SplitIndices(train, validation, test, method)
     split.assert_disjoint_and_complete(len(labels))

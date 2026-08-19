@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+from functools import lru_cache
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -197,6 +198,71 @@ def _sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
         while block := stream.read(chunk_size):
             digest.update(block)
     return digest.hexdigest()
+
+
+def indices_checksum(indices_by_split: dict[str, np.ndarray]) -> str:
+    """Return an order-sensitive checksum for named split/subset indices."""
+
+    digest = hashlib.sha256()
+    for name in sorted(indices_by_split):
+        values = np.asarray(indices_by_split[name], dtype="<i8")
+        digest.update(name.encode("utf-8"))
+        digest.update(np.asarray([len(values)], dtype="<i8").tobytes())
+        digest.update(values.tobytes())
+    return digest.hexdigest()
+
+
+def prepared_split_checksum(dataset: PreparedDataset) -> str | None:
+    """Checksum the persisted split indices, or return None for a legacy cache."""
+
+    paths = {
+        split: dataset.cache_dir / f"{split}_indices.npy"
+        for split in ("train", "val", "test")
+    }
+    if not all(path.exists() for path in paths.values()):
+        if (
+            dataset.metadata.get("dataset") == "cicids2017"
+            and dataset.metadata.get("paper_split_match")
+            and dataset.metadata.get("clean_rows")
+        ):
+            return _reconstructed_paper_split_checksum(
+                int(dataset.metadata["clean_rows"])
+            )
+        return None
+    return indices_checksum(
+        {split: np.load(path) for split, path in paths.items()}
+    )
+
+
+@lru_cache(maxsize=4)
+def _reconstructed_paper_split_checksum(population_size: int) -> str:
+    """Identify a legacy CIC paper split whose indices were not persisted."""
+
+    dummy_labels = np.zeros(population_size, dtype=np.uint8)
+    split = row_level_split(dummy_labels, protocol="paper_replication", seed=42)
+    return indices_checksum(
+        {"train": split.train, "val": split.validation, "test": split.test}
+    )
+
+
+def cache_identity(dataset: PreparedDataset) -> dict:
+    """Stable identity used to prevent mixing searches and prepared datasets."""
+
+    controls = {}
+    for name in ("metadata.json", "preprocessor.joblib", "label_encoder.joblib"):
+        path = dataset.cache_dir / name
+        if path.exists():
+            controls[name] = _sha256(path)
+    payload = {
+        "dataset": dataset.metadata.get("dataset"),
+        "cache_path": str(dataset.cache_dir.resolve()),
+        "control_sha256": controls,
+        "split_checksum": prepared_split_checksum(dataset),
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return {**payload, "identity_sha256": digest}
 
 
 def _find_cic_files(data_dir: Path) -> list[Path]:
@@ -443,6 +509,13 @@ def prepare_cicids2017(
             "validation_rows": int(len(val_indices)),
             "test_rows": int(len(test_indices)),
             "test_class_counts": test_counts,
+            "checksum_sha256": indices_checksum(
+                {
+                    "train": train_indices,
+                    "val": val_indices,
+                    "test": test_indices,
+                }
+            ),
         },
         "paper_test_class_counts": list(PAPER_CIC_TEST_COUNTS),
         "paper_split_match": protocol == "paper_replication"
@@ -633,7 +706,18 @@ def prepare_nsl_kdd(
         "train_class_counts": np.bincount(train_labels_all[train_indices], minlength=5).tolist(),
         "validation_class_counts": np.bincount(train_labels_all[val_indices], minlength=5).tolist(),
         "test_class_counts": np.bincount(test_labels, minlength=5).tolist(),
-        "split": {"method": split_method, "indices_saved": True, "seed": 42},
+        "split": {
+            "method": split_method,
+            "indices_saved": True,
+            "seed": 42,
+            "checksum_sha256": indices_checksum(
+                {
+                    "train": train_indices,
+                    "val": val_indices,
+                    "test": np.arange(len(test_frame), dtype=np.int64),
+                }
+            ),
+        },
         "normalization": "train-fitted MinMaxScaler for numeric columns; train-fitted one-hot encoding for categorical columns",
         "label_mapping": label_mapping,
         "preprocessing_report": preprocessing_report,
@@ -699,3 +783,74 @@ def deterministic_subset(length: int, maximum: int | None, seed: int) -> np.ndar
     if maximum < 1:
         raise ValueError("Sample limit must be positive")
     return np.random.RandomState(seed).permutation(length)[:maximum]
+
+
+def deterministic_stratified_subset(
+    labels: np.ndarray, maximum: int | None, seed: int
+) -> np.ndarray:
+    """Choose a deterministic, approximately proportional subset with every class.
+
+    Allocation starts with one sample per observed class and distributes the
+    remaining capacity by largest remainder.  This avoids scikit-learn's
+    train/test complement constraints and gives a clear failure when the cap
+    cannot represent every class.
+    """
+
+    labels = np.asarray(labels)
+    if labels.ndim != 1:
+        raise ValueError("labels must be a rank-1 array")
+    length = len(labels)
+    if maximum is None or maximum >= length:
+        return np.arange(length, dtype=np.int64)
+    if maximum < 1:
+        raise ValueError("Sample limit must be positive")
+    classes, counts = np.unique(labels, return_counts=True)
+    if maximum < len(classes):
+        raise ValueError(
+            f"Sample limit {maximum} cannot include all {len(classes)} observed classes"
+        )
+
+    allocation = np.ones(len(classes), dtype=np.int64)
+    remaining = maximum - len(classes)
+    capacity = counts - 1
+    if remaining:
+        ideal = remaining * capacity / max(1, int(capacity.sum()))
+        extra = np.minimum(np.floor(ideal).astype(np.int64), capacity)
+        allocation += extra
+        unallocated = maximum - int(allocation.sum())
+        order = np.lexsort((classes, -(ideal - extra)))
+        while unallocated:
+            progressed = False
+            for index in order:
+                if allocation[index] < counts[index]:
+                    allocation[index] += 1
+                    unallocated -= 1
+                    progressed = True
+                    if not unallocated:
+                        break
+            if not progressed:
+                raise AssertionError("Stratified allocation exhausted unexpectedly")
+
+    rng = np.random.RandomState(seed)
+    chosen = []
+    for code, count in zip(classes, allocation, strict=True):
+        members = np.flatnonzero(labels == code)
+        chosen.append(rng.permutation(members)[: int(count)])
+    result = np.concatenate(chosen).astype(np.int64, copy=False)
+    result = result[rng.permutation(len(result))]
+    if len(np.unique(labels[result])) != len(classes):
+        raise AssertionError("Stratified subset omitted an observed class")
+    return result
+
+
+def subset_manifest(indices: np.ndarray, labels: np.ndarray) -> dict:
+    """Describe a saved subset without serializing the full index vector to JSON."""
+
+    indices = np.asarray(indices, dtype=np.int64)
+    selected = np.asarray(labels)[indices]
+    classes, counts = np.unique(selected, return_counts=True)
+    return {
+        "sample_count": int(len(indices)),
+        "class_counts": {str(code): int(count) for code, count in zip(classes, counts)},
+        "indices_checksum_sha256": indices_checksum({"subset": indices}),
+    }

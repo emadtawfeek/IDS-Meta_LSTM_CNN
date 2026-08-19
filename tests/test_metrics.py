@@ -13,6 +13,10 @@ def test_binary_metrics_use_attack_as_positive():
     assert matrix.tolist() == [[1, 1], [0, 2]]
     assert metrics["recall_attack"] == 1.0
     assert metrics["precision_attack"] == 2 / 3
+    assert metrics["f1_micro"] == metrics["accuracy"]
+    assert "matthews_correlation_coefficient" in metrics
+    assert metrics["predicted_BENIGN/normal"] == 1
+    assert metrics["predicted_attack"] == 3
 
 
 def test_binary_probability_metrics_are_computed_from_scores():
