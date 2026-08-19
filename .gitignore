@@ -1,0 +1,42 @@
+# Python/runtime state
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+/.pytest-tmp/
+*.egg-info/
+.coverage
+htmlcov/
+.env
+.env.*
+
+# Local datasets and prepared caches
+/cache/
+/data/
+/datasets/
+/MachineLearningCSV/
+/GeneratedLabelledFlows/
+/nsl-kdd/
+*.zip
+*.rar
+*.7z
+*.arff
+
+# Models and generated experiment outputs
+/outputs/
+/results/
+/checkpoints/
+*.keras
+*.h5
+*.hdf5
+*.joblib
+*.npy
+*.npz
+
+# Source paper and local IDE state
+*.pdf
+.vscode/
+.idea/
+*.log

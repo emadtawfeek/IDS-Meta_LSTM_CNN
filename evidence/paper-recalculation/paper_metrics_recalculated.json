@@ -1,0 +1,583 @@
+{
+  "binary": {
+    "pso": {
+      "classification_report": {
+        "BENIGN/normal": {
+          "f1-score": 0.9988289992778232,
+          "precision": 0.9988898094053437,
+          "recall": 0.998768196553815,
+          "support": 418898.0
+        },
+        "accuracy": 0.9980541891463027,
+        "attack": {
+          "f1-score": 0.9942488641360105,
+          "precision": 0.9939516837996554,
+          "recall": 0.9945462222326477,
+          "support": 85262.0
+        },
+        "macro avg": {
+          "f1-score": 0.9965389317069169,
+          "precision": 0.9964207466024995,
+          "recall": 0.9966572093932313,
+          "support": 504160.0
+        },
+        "weighted avg": {
+          "f1-score": 0.9980544208057881,
+          "precision": 0.9980546886790024,
+          "recall": 0.9980541891463027,
+          "support": 504160.0
+        }
+      },
+      "matrix": [
+        [
+          418382,
+          516
+        ],
+        [
+          465,
+          84797
+        ]
+      ],
+      "metrics": {
+        "accuracy": 0.9980541891463027,
+        "balanced_accuracy": 0.9966572093932313,
+        "error_rate": 0.001945810853697239,
+        "f1_attack": 0.9942488641360105,
+        "f1_macro": 0.9965389317069169,
+        "f1_weighted": 0.9980544208057881,
+        "false_alarm_rate": 0.00123180344618499,
+        "false_negative_rate": 0.005453777767352396,
+        "precision_attack": 0.9939516837996554,
+        "precision_macro": 0.9964207466024995,
+        "precision_weighted": 0.9980546886790024,
+        "recall_attack": 0.9945462222326477,
+        "recall_macro": 0.9966572093932313,
+        "recall_weighted": 0.9980541891463027,
+        "specificity": 0.998768196553815,
+        "support_BENIGN/normal": 418898,
+        "support_attack": 85262
+      }
+    },
+    "ssa": {
+      "classification_report": {
+        "BENIGN/normal": {
+          "f1-score": 0.9989709232084274,
+          "precision": 0.9991522307078754,
+          "recall": 0.9987896814976438,
+          "support": 418898.0
+        },
+        "accuracy": 0.9982902253252935,
+        "attack": {
+          "f1-score": 0.9949494949494949,
+          "precision": 0.9940642049312759,
+          "recall": 0.9958363632098708,
+          "support": 85262.0
+        },
+        "macro avg": {
+          "f1-score": 0.9969602090789611,
+          "precision": 0.9966082178195756,
+          "recall": 0.9973130223537573,
+          "support": 504160.0
+        },
+        "weighted avg": {
+          "f1-score": 0.9982908315386935,
+          "precision": 0.9982917593222747,
+          "recall": 0.9982902253252935,
+          "support": 504160.0
+        }
+      },
+      "matrix": [
+        [
+          418391,
+          507
+        ],
+        [
+          355,
+          84907
+        ]
+      ],
+      "metrics": {
+        "accuracy": 0.9982902253252935,
+        "balanced_accuracy": 0.9973130223537573,
+        "error_rate": 0.0017097746747064425,
+        "f1_attack": 0.9949494949494949,
+        "f1_macro": 0.9969602090789611,
+        "f1_weighted": 0.9982908315386935,
+        "false_alarm_rate": 0.0012103185023561822,
+        "false_negative_rate": 0.0041636367901292486,
+        "precision_attack": 0.9940642049312759,
+        "precision_macro": 0.9966082178195756,
+        "precision_weighted": 0.9982917593222747,
+        "recall_attack": 0.9958363632098708,
+        "recall_macro": 0.9973130223537573,
+        "recall_weighted": 0.9982902253252935,
+        "specificity": 0.9987896814976438,
+        "support_BENIGN/normal": 418898,
+        "support_attack": 85262
+      }
+    }
+  },
+  "multiclass": {
+    "pso": {
+      "classification_report": {
+        "BENIGN": {
+          "f1-score": 0.9985437669645181,
+          "precision": 0.9985652215431627,
+          "recall": 0.9985223133077742,
+          "support": 418898.0
+        },
+        "Bot": {
+          "f1-score": 0.5641025641025641,
+          "precision": 0.9935483870967742,
+          "recall": 0.3938618925831202,
+          "support": 391.0
+        },
+        "Brute Force": {
+          "f1-score": 0.9799491669020051,
+          "precision": 0.9709009513150532,
+          "recall": 0.9891676168757126,
+          "support": 1754.0
+        },
+        "DDoS": {
+          "f1-score": 0.9986280965820006,
+          "precision": 0.9982368152966068,
+          "recall": 0.9990196847306093,
+          "support": 25502.0
+        },
+        "DoS": {
+          "f1-score": 0.9922589905928793,
+          "precision": 0.9922844253050344,
+          "recall": 0.9922335571846004,
+          "support": 39014.0
+        },
+        "Heartbleed": {
+          "f1-score": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "support": 3.0
+        },
+        "Infiltration": {
+          "f1-score": 0.5454545454545454,
+          "precision": 0.6,
+          "recall": 0.5,
+          "support": 6.0
+        },
+        "PortScan": {
+          "f1-score": 0.9931264890325054,
+          "precision": 0.9875285916566823,
+          "recall": 0.9987882126136051,
+          "support": 18155.0
+        },
+        "Web Attack": {
+          "f1-score": 0.939150401836969,
+          "precision": 0.9423963133640553,
+          "recall": 0.9359267734553776,
+          "support": 437.0
+        },
+        "accuracy": 0.9975087273881308,
+        "macro avg": {
+          "f1-score": 0.8901348912742209,
+          "precision": 0.942606745064152,
+          "recall": 0.8675022278611999,
+          "support": 504160.0
+        },
+        "weighted avg": {
+          "f1-score": 0.9974081257428165,
+          "precision": 0.9975115845464952,
+          "recall": 0.9975087273881308,
+          "support": 504160.0
+        }
+      },
+      "matrix": [
+        [
+          418279,
+          1,
+          33,
+          45,
+          286,
+          0,
+          2,
+          229,
+          23
+        ],
+        [
+          237,
+          154,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          15,
+          0,
+          1735,
+          0,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          23,
+          0,
+          0,
+          25477,
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          302,
+          0,
+          1,
+          0,
+          38711,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0
+        ],
+        [
+          13,
+          0,
+          0,
+          0,
+          7,
+          0,
+          0,
+          18133,
+          2
+        ],
+        [
+          8,
+          0,
+          18,
+          0,
+          2,
+          0,
+          0,
+          0,
+          409
+        ]
+      ],
+      "metrics": {
+        "accuracy": 0.9975087273881308,
+        "balanced_accuracy": 0.8675022278611999,
+        "error_rate": 0.002491272611869211,
+        "f1_macro": 0.8901348912742209,
+        "f1_micro": 0.9975087273881308,
+        "f1_weighted": 0.9974081257428165,
+        "precision_macro": 0.942606745064152,
+        "precision_micro": 0.9975087273881308,
+        "precision_weighted": 0.9975115845464952,
+        "recall_macro": 0.8675022278611999,
+        "recall_micro": 0.9975087273881308,
+        "recall_weighted": 0.9975087273881308,
+        "support_BENIGN": 418898,
+        "support_Bot": 391,
+        "support_Brute Force": 1754,
+        "support_DDoS": 25502,
+        "support_DoS": 39014,
+        "support_Heartbleed": 3,
+        "support_Infiltration": 6,
+        "support_PortScan": 18155,
+        "support_Web Attack": 437
+      }
+    },
+    "ssa": {
+      "classification_report": {
+        "BENIGN": {
+          "f1-score": 0.998455936880897,
+          "precision": 0.9989271283598923,
+          "recall": 0.997985189712054,
+          "support": 418898.0
+        },
+        "Bot": {
+          "f1-score": 0.5732899022801303,
+          "precision": 0.7892376681614349,
+          "recall": 0.45012787723785164,
+          "support": 391.0
+        },
+        "Brute Force": {
+          "f1-score": 0.986939239068711,
+          "precision": 0.9830316742081447,
+          "recall": 0.9908779931584949,
+          "support": 1754.0
+        },
+        "DDoS": {
+          "f1-score": 0.9992353091115861,
+          "precision": 0.9992940899643123,
+          "recall": 0.9991765351737119,
+          "support": 25502.0
+        },
+        "DoS": {
+          "f1-score": 0.9903848606187355,
+          "precision": 0.9854837072378438,
+          "recall": 0.9953350079458656,
+          "support": 39014.0
+        },
+        "Heartbleed": {
+          "f1-score": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "support": 3.0
+        },
+        "Infiltration": {
+          "f1-score": 0.6666666666666666,
+          "precision": 1.0,
+          "recall": 0.5,
+          "support": 6.0
+        },
+        "PortScan": {
+          "f1-score": 0.9938905783403195,
+          "precision": 0.9887168865147716,
+          "recall": 0.9991187000826218,
+          "support": 18155.0
+        },
+        "Web Attack": {
+          "f1-score": 0.9575471698113207,
+          "precision": 0.9878345498783455,
+          "recall": 0.9290617848970252,
+          "support": 437.0
+        },
+        "accuracy": 0.9973659155823548,
+        "macro avg": {
+          "f1-score": 0.9073788514198186,
+          "precision": 0.9702806338138605,
+          "recall": 0.8735203431341806,
+          "support": 504160.0
+        },
+        "weighted avg": {
+          "f1-score": 0.9972971838161915,
+          "precision": 0.9973101866668003,
+          "recall": 0.9973659155823548,
+          "support": 504160.0
+        }
+      },
+      "matrix": [
+        [
+          418054,
+          47,
+          11,
+          18,
+          559,
+          0,
+          0,
+          207,
+          2
+        ],
+        [
+          215,
+          176,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          15,
+          0,
+          1738,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          21,
+          0,
+          0,
+          25481,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          181,
+          0,
+          0,
+          0,
+          38832,
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          0,
+          0,
+          8,
+          0,
+          0,
+          18139,
+          2
+        ],
+        [
+          8,
+          0,
+          19,
+          0,
+          4,
+          0,
+          0,
+          0,
+          406
+        ]
+      ],
+      "metrics": {
+        "accuracy": 0.9973659155823548,
+        "balanced_accuracy": 0.8735203431341806,
+        "error_rate": 0.0026340844176452327,
+        "f1_macro": 0.9073788514198186,
+        "f1_micro": 0.9973659155823548,
+        "f1_weighted": 0.9972971838161915,
+        "precision_macro": 0.9702806338138605,
+        "precision_micro": 0.9973659155823548,
+        "precision_weighted": 0.9973101866668003,
+        "recall_macro": 0.8735203431341806,
+        "recall_micro": 0.9973659155823548,
+        "recall_weighted": 0.9973659155823548,
+        "support_BENIGN": 418898,
+        "support_Bot": 391,
+        "support_Brute Force": 1754,
+        "support_DDoS": 25502,
+        "support_DoS": 39014,
+        "support_Heartbleed": 3,
+        "support_Infiltration": 6,
+        "support_PortScan": 18155,
+        "support_Web Attack": 437
+      }
+    }
+  },
+  "submitted_saved_run": {
+    "auc_status": "unavailable: the legacy run did not save probabilities",
+    "audit_environment": {
+      "numpy": "1.26.4",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "python": "3.12.13 (main, Aug  7 2026, 02:26:41) [MSC v.1944 64 bit (AMD64)]"
+    },
+    "audit_type": "independent recalculation from saved predictions",
+    "metrics": {
+      "accuracy": 0.9980581561409076,
+      "balanced_accuracy": 0.9973041489558738,
+      "error_rate": 0.0019418438590923517,
+      "f1_attack": 0.9942697937945203,
+      "f1_macro": 0.9965503990459912,
+      "f1_weighted": 0.998059626302576,
+      "false_alarm_rate": 0.0015564648195980884,
+      "false_negative_rate": 0.0038352372686542655,
+      "precision_attack": 0.9923820206339747,
+      "precision_macro": 0.9958003974489811,
+      "precision_weighted": 0.998062563362682,
+      "recall_attack": 0.9961647627313457,
+      "recall_macro": 0.9973041489558738,
+      "recall_weighted": 0.9980581561409076,
+      "specificity": 0.998443535180402,
+      "support_BENIGN/normal": 418898,
+      "support_attack": 85262
+    },
+    "paper_algorithm": "ssa",
+    "paper_confusion_comparison": {
+      "absolute_cell_error": 346,
+      "actual_errors": 979,
+      "expected_errors": 862,
+      "matching_cells": 0,
+      "maximum_cell_error": 145,
+      "signed_cell_difference": [
+        [
+          -145,
+          145
+        ],
+        [
+          -28,
+          28
+        ]
+      ],
+      "total_cells": 4
+    },
+    "prediction_count": 504160,
+    "probabilities_available": false,
+    "saved_metrics_match_recalculation": {
+      "accuracy": true,
+      "error_rate": true,
+      "f1_attack": true,
+      "false_alarm_rate": true,
+      "false_negative_rate": true,
+      "precision_attack": true,
+      "recall_attack": true,
+      "specificity": true
+    },
+    "source_artifact_sha256": {
+      "classification_report.json": "04c9533d699f19ade0348cd6f5d24a5175c4251f44ef27fe9b967bfa40c79bde",
+      "confusion_matrix.csv": "fdaaca3a3ab9b9f56165cab261d2da5341b67404d46489e30ac9673c1b4f544a",
+      "history.json": "0f3ba75638943b90fb8b52060fdab12973a6374479980e4d848d661ae7b7ac8d",
+      "metrics.json": "ae5fc27f2af2f8d262bc22a2af8c1613aceed2799efb9638198d750cc7e23e96",
+      "model.keras": "4530d69b3f25225e91e04d832cdd86327c6eeaab8986424f8631a1e1865bc7e7",
+      "predictions.npy": "377d999dce845ef02a6b8e1f2f7140ab99d8ce9cf5b3ec0207204534e2702370"
+    },
+    "source_cache": "D:\\Sura project\\pso-cnn-lstm\\paper-reproduction\\cache\\cicids2017",
+    "source_run": "D:\\Sura project\\pso-cnn-lstm\\paper-reproduction\\outputs\\cic-binary-cnn-lstm-ssa",
+    "task": "binary",
+    "truth_source": "complete cached test labels"
+  }
+}

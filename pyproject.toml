@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ids-paper-reproduction"
+version = "0.1.0"
+description = "Reproducible PSO/SSA CNN-LSTM experiments for CIC-IDS2017 and NSL-KDD"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "joblib==1.4.2",
+  "matplotlib==3.9.2",
+  "numpy==1.26.4",
+  "pandas==2.2.3",
+  "psutil==6.1.0",
+  "PyYAML==6.0.2",
+  "scikit-learn==1.5.2",
+  "scipy==1.14.1",
+  "seaborn==0.13.2",
+  "tensorflow==2.16.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.3"]
+
+[project.scripts]
+ids-repro = "ids_repro.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -p no:cacheprovider"

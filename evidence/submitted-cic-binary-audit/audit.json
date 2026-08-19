@@ -1,0 +1,71 @@
+{
+  "auc_status": "unavailable: the legacy run did not save probabilities",
+  "audit_environment": {
+    "numpy": "1.26.4",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13 (main, Aug  7 2026, 02:26:41) [MSC v.1944 64 bit (AMD64)]"
+  },
+  "audit_type": "independent recalculation from saved predictions",
+  "metrics": {
+    "accuracy": 0.9980581561409076,
+    "balanced_accuracy": 0.9973041489558738,
+    "error_rate": 0.0019418438590923517,
+    "f1_attack": 0.9942697937945203,
+    "f1_macro": 0.9965503990459912,
+    "f1_weighted": 0.998059626302576,
+    "false_alarm_rate": 0.0015564648195980884,
+    "false_negative_rate": 0.0038352372686542655,
+    "precision_attack": 0.9923820206339747,
+    "precision_macro": 0.9958003974489811,
+    "precision_weighted": 0.998062563362682,
+    "recall_attack": 0.9961647627313457,
+    "recall_macro": 0.9973041489558738,
+    "recall_weighted": 0.9980581561409076,
+    "specificity": 0.998443535180402,
+    "support_BENIGN/normal": 418898,
+    "support_attack": 85262
+  },
+  "paper_algorithm": "ssa",
+  "paper_confusion_comparison": {
+    "absolute_cell_error": 346,
+    "actual_errors": 979,
+    "expected_errors": 862,
+    "matching_cells": 0,
+    "maximum_cell_error": 145,
+    "signed_cell_difference": [
+      [
+        -145,
+        145
+      ],
+      [
+        -28,
+        28
+      ]
+    ],
+    "total_cells": 4
+  },
+  "prediction_count": 504160,
+  "probabilities_available": false,
+  "saved_metrics_match_recalculation": {
+    "accuracy": true,
+    "error_rate": true,
+    "f1_attack": true,
+    "false_alarm_rate": true,
+    "false_negative_rate": true,
+    "precision_attack": true,
+    "recall_attack": true,
+    "specificity": true
+  },
+  "source_artifact_sha256": {
+    "classification_report.json": "04c9533d699f19ade0348cd6f5d24a5175c4251f44ef27fe9b967bfa40c79bde",
+    "confusion_matrix.csv": "fdaaca3a3ab9b9f56165cab261d2da5341b67404d46489e30ac9673c1b4f544a",
+    "history.json": "0f3ba75638943b90fb8b52060fdab12973a6374479980e4d848d661ae7b7ac8d",
+    "metrics.json": "ae5fc27f2af2f8d262bc22a2af8c1613aceed2799efb9638198d750cc7e23e96",
+    "model.keras": "4530d69b3f25225e91e04d832cdd86327c6eeaab8986424f8631a1e1865bc7e7",
+    "predictions.npy": "377d999dce845ef02a6b8e1f2f7140ab99d8ce9cf5b3ec0207204534e2702370"
+  },
+  "source_cache": "D:\\Sura project\\pso-cnn-lstm\\paper-reproduction\\cache\\cicids2017",
+  "source_run": "D:\\Sura project\\pso-cnn-lstm\\paper-reproduction\\outputs\\cic-binary-cnn-lstm-ssa",
+  "task": "binary",
+  "truth_source": "complete cached test labels"
+}
